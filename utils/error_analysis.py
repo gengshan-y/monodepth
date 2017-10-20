@@ -1,7 +1,9 @@
-import numpy as np
-import cv, cv2
 import argparse
+import cv, cv2
 from evaluation_utils import *
+from matplotlib import pyplot as plt
+import numpy as np
+import pdb
 
 parser = argparse.ArgumentParser(description='Evaluation on the KITTI dataset')
 parser.add_argument('--split',               type=str,   help='data split, kitti or eigen',         required=True)
@@ -17,6 +19,7 @@ args = parser.parse_args()
 if __name__ == '__main__':
 
     pred_disparities = np.load(args.predicted_disp_path)
+    # plt.imshow(pred_disparities[0]); plt.show();
 
     if args.split == 'kitti':
         num_samples = 200
@@ -25,8 +28,9 @@ if __name__ == '__main__':
         gt_depths, pred_depths, pred_disparities_resized = convert_disps_to_depths_kitti(gt_disparities, pred_disparities)
 
     elif args.split == 'eigen':
+        pdb.set_trace()
         num_samples = 697
-        test_files = read_text_lines('utils/filenames/' + 'eigen_test_files.txt')
+        test_files = read_text_lines( "%s/%s" % ('utils/filenames','eigen_test_files.txt') )
         gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, args.gt_path)
 
         num_test = len(im_files)

@@ -12,6 +12,8 @@
 
 from __future__ import absolute_import, division, print_function
 import tensorflow as tf
+from utils.evaluation_utils import  read_text_lines, read_file_data
+from utils.tfrecord_utils import imread_tf
 
 def string_length_tf(t):
   return tf.py_func(len, [t], [tf.int64])
@@ -44,11 +46,21 @@ class MonodepthDataloader(object):
             left_image_o  = self.read_image(left_image_path)
             right_image_o = self.read_image(right_image_path)
 
+        # load lidar data if needed
+        if mode == 'train' and self.params.use_lidar:
+            tmp = tf.string_split([left_image_path],tf.convert_to_tensor('/'))
+            left_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
+                      tmp.values[1], tmp.values[2], tmp.values[3]]\
+                         + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
+            left_lidar_o = self.read_lidar(left_lidar_path)
+
         if mode == 'train':
             # randomly flip images
-            do_flip = tf.random_uniform([], 0, 1)
+            #do_flip = tf.random_uniform([], 0, 1)
+            do_flip = tf.random_uniform([], 0, 0.1)
             left_image  = tf.cond(do_flip > 0.5, lambda: tf.image.flip_left_right(right_image_o), lambda: left_image_o)
             right_image = tf.cond(do_flip > 0.5, lambda: tf.image.flip_left_right(left_image_o),  lambda: right_image_o)
+            left_lidar = left_lidar_o
 
             # randomly augment images
             do_augment  = tf.random_uniform([], 0, 1)
@@ -56,12 +68,14 @@ class MonodepthDataloader(object):
 
             left_image.set_shape( [None, None, 3])
             right_image.set_shape([None, None, 3])
+            left_lidar.set_shape( [None, None, 1])
 
             # capacity = min_after_dequeue + (num_threads + a small safety margin) * batch_size
             min_after_dequeue = 2048
             capacity = min_after_dequeue + 4 * params.batch_size
-            self.left_image_batch, self.right_image_batch = tf.train.shuffle_batch([left_image, right_image],
-                        params.batch_size, capacity, min_after_dequeue, params.num_threads)
+            self.left_image_batch, self.right_image_batch, self.left_lidar_batch =\
+                tf.train.shuffle_batch([left_image, right_image, left_lidar],
+                params.batch_size, capacity, min_after_dequeue, params.num_threads)
 
         elif mode == 'test':
             self.left_image_batch = tf.stack([left_image_o,  tf.image.flip_left_right(left_image_o)],  0)
@@ -111,5 +125,13 @@ class MonodepthDataloader(object):
 
         image  = tf.image.convert_image_dtype(image,  tf.float32)
         image  = tf.image.resize_images(image,  [self.params.height, self.params.width], tf.image.ResizeMethod.AREA)
+
+        return image
+    
+    def read_lidar(self, image_path):
+        #image = imread_tf(image_path)
+        image = tf.image.decode_jpeg(tf.read_file(image_path))
+        image = tf.image.resize_images(image,  [self.params.height, self.params.width], tf.image.ResizeMethod.AREA)
+        image = tf.divide(image, tf.cast(tf.shape(image)[1],tf.float32))
 
         return image

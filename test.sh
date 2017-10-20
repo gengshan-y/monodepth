@@ -1,0 +1,2 @@
+python monodepth_main.py --mode test --data_path /data/gengshay/KITTI/ --filenames_file ~/code/depth/monodepth/utils/filenames/eigen_test_files.txt --log_directory /scratch/gengshay/tmp/ --checkpoint_path /scratch/gengshay/tmp/no_lr_image_sm_eigen/model-141250
+python utils/evaluate_kitti.py --split eigen --predicted_disp_path /scratch/gengshay/tmp/no_lr_image_sm_eigen/disparities.npy --gt_path /data/gengshay/KITTI/   --eigen_crop >> out

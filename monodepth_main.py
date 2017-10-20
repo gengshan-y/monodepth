@@ -24,6 +24,8 @@ from monodepth_model import *
 from monodepth_dataloader import *
 from average_gradients import *
 
+import pdb
+
 parser = argparse.ArgumentParser(description='Monodepth TensorFlow implementation.')
 
 parser.add_argument('--mode',                      type=str,   help='train or test', default='train')
@@ -50,6 +52,7 @@ parser.add_argument('--log_directory',             type=str,   help='directory t
 parser.add_argument('--checkpoint_path',           type=str,   help='path to a specific checkpoint to load', default='')
 parser.add_argument('--retrain',                               help='if used with checkpoint_path, will restart training from step zero', action='store_true')
 parser.add_argument('--full_summary',                          help='if set, will keep more data for each summary. Warning: the file can become very large', action='store_true')
+parser.add_argument('--use_lidar',                             help='if set, will train with lidar depth map', action='store_true')
 
 args = parser.parse_args()
 
@@ -95,10 +98,14 @@ def train(params):
         dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode)
         left  = dataloader.left_image_batch
         right = dataloader.right_image_batch
+        if params.use_lidar:
+            lidar = dataloader.left_lidar_batch
 
         # split for each gpu
         left_splits  = tf.split(left,  args.num_gpus, 0)
         right_splits = tf.split(right, args.num_gpus, 0)
+        if params.use_lidar:
+            lidar_splits = tf.split(lidar, args.num_gpus, 0)
 
         tower_grads  = []
         tower_losses = []
@@ -106,8 +113,12 @@ def train(params):
         with tf.variable_scope(tf.get_variable_scope()):
             for i in range(args.num_gpus):
                 with tf.device('/gpu:%d' % i):
-
-                    model = MonodepthModel(params, args.mode, left_splits[i], right_splits[i], reuse_variables, i)
+                    if params.use_lidar:
+                        pdb.set_trace()
+                        model = MonodepthModel(params, args.mode, left_splits[i],\
+                                     right_splits[i], lidar_splits[i], reuse_variables, i)
+                    else:
+                        model = MonodepthModel(params, args.mode, left_splits[i], right_splits[i], reuse_variables, i)
 
                     loss = model.total_loss
                     tower_losses.append(loss)
@@ -236,12 +247,15 @@ def main(_):
         num_threads=args.num_threads,
         num_epochs=args.num_epochs,
         do_stereo=args.do_stereo,
+        use_lidar=args.use_lidar,
         wrap_mode=args.wrap_mode,
         use_deconv=args.use_deconv,
         alpha_image_loss=args.alpha_image_loss,
         disp_gradient_loss_weight=args.disp_gradient_loss_weight,
         lr_loss_weight=args.lr_loss_weight,
         full_summary=args.full_summary)
+
+
 
     if args.mode == 'train':
         train(params)

@@ -114,7 +114,6 @@ def train(params):
             for i in range(args.num_gpus):
                 with tf.device('/gpu:%d' % i):
                     if params.use_lidar:
-                        pdb.set_trace()
                         model = MonodepthModel(params, args.mode, left_splits[i],\
                                      right_splits[i], lidar_splits[i], reuse_variables, i)
                     else:

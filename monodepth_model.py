@@ -45,7 +45,7 @@ class MonodepthModel(object):
         self.left = left
         self.right = right
         if params.use_lidar:
-            self.lidar = lidar;
+            self.lidar = lidar
         self.model_collection = ['model_' + str(model_index)]
 
         self.reuse_variables = reuse_variables
@@ -294,6 +294,8 @@ class MonodepthModel(object):
             with tf.variable_scope('model', reuse=self.reuse_variables):
 
                 self.left_pyramid  = self.scale_pyramid(self.left,  4)
+                if self.params.use_lidar:
+                    self.lidar = self.scale_pyramid(self.lidar,  4);
                 if self.mode == 'train':
                     self.right_pyramid = self.scale_pyramid(self.right, 4)
 
@@ -371,14 +373,18 @@ class MonodepthModel(object):
 
             # Supervised
             if self.params.use_lidar:
-                self.mask = self.lidar > 0;
-                self.est_masked = dynamic_partition(self.disp_left_est[0],self.mask, ,2) 
-                self.gt_masked = dynamic_partition(self.lidar,self.mask,2) 
-                #self.est_masked = tf.boolean_mask(self.disp_left_est[0],self.mask)
-                #self.gt_masked =  tf.boolean_mask(self.lidar,self.mask)
-                self.sup_loss = tf.abs(self.est_masked - self.gt_masked)
-                self.sup_loss = tf.reduce_mean(self.sup_loss)
-                self.total_loss += 100 * self.sup_loss  # use a larger loss
+                self.mask = [tf.sign(x) for x in self.lidar]
+                self.est_masked = [self.mask[i] * self.disp_left_est[i] for i in range(4)]
+                self.gt_masked = [self.mask[i] * self.lidar[i] for i in range(4)]
+                #self.mask = [tf.cast(x > 0, tf.int32) for x in self.lidar];
+                #self.est_masked = [tf.dynamic_partition(x,self.mask[i],2)[1] for i,x in enumerate(self.disp_left_est)]
+                #self.gt_masked = [tf.dynamic_partition(x,self.mask[i],2)[1] for i,x in enumerate(self.lidar)]
+                ##self.est_masked = tf.boolean_mask(self.disp_left_est[0],self.mask)
+                ##self.gt_masked =  tf.boolean_mask(self.lidar,self.mask)
+                self.sup_loss = [tf.abs(self.est_masked[i] - self.gt_masked[i]) for i in range(4)]
+                self.sup_loss = [tf.reduce_mean(x) for x in self.sup_loss]
+                self.sup_loss = tf.add_n(self.sup_loss)
+                self.total_loss += 10 * self.sup_loss
 
     def build_summaries(self):
         # SUMMARIES
@@ -398,20 +404,20 @@ class MonodepthModel(object):
 
                 if self.params.full_summary:
                     tf.summary.image('left_est_' + str(i), self.left_est[i], max_outputs=4, collections=self.model_collection)
-                    tf.summary.image('right_est_' + str(i), self.right_est[i], max_outputs=4, collections=self.model_collection)
+                    #tf.summary.image('right_est_' + str(i), self.right_est[i], max_outputs=4, collections=self.model_collection)
                     tf.summary.image('ssim_left_'  + str(i), self.ssim_left[i],  max_outputs=4, collections=self.model_collection)
-                    tf.summary.image('ssim_right_' + str(i), self.ssim_right[i], max_outputs=4, collections=self.model_collection)
+                    #tf.summary.image('ssim_right_' + str(i), self.ssim_right[i], max_outputs=4, collections=self.model_collection)
                     tf.summary.image('l1_left_'  + str(i), self.l1_left[i],  max_outputs=4, collections=self.model_collection)
-                    tf.summary.image('l1_right_' + str(i), self.l1_right[i], max_outputs=4, collections=self.model_collection)
+                    #tf.summary.image('l1_right_' + str(i), self.l1_right[i], max_outputs=4, collections=self.model_collection)
 
             if self.params.use_lidar:
                 tf.summary.scalar('sup_loss', self.sup_loss, collections=self.model_collection)
                 # for debug
-                tf.summary.histogram('hist_pred', self.est_masked, collections=self.model_collection)
-                tf.summary.histogram('hist_gt', self.gt_masked, collections=self.model_collection)
-                tf.summary.image('hist_gt', self.lidar, max_outputs=5, collections=self.model_collection)
+                tf.summary.histogram('hist_pred', self.est_masked[0], collections=self.model_collection)
+                tf.summary.histogram('hist_gt', self.gt_masked[0], collections=self.model_collection)
+                tf.summary.image('hist_gt', self.lidar[0], max_outputs=5, collections=self.model_collection)
 
             if self.params.full_summary:
                 tf.summary.image('left',  self.left,   max_outputs=4, collections=self.model_collection)
-                tf.summary.image('right', self.right,  max_outputs=4, collections=self.model_collection)
+                # tf.summary.image('right', self.right,  max_outputs=4, collections=self.model_collection)
 

@@ -51,7 +51,8 @@ class MonodepthDataloader(object):
             tmp = tf.string_split([left_image_path],tf.convert_to_tensor('/'))
             left_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
                       tmp.values[1], tmp.values[2], tmp.values[3]]\
-                         + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
+                   #  + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
+                    + [tf.convert_to_tensor('depth_0')] + [tmp.values[-1]], '/')
             left_lidar_o = self.read_lidar(left_lidar_path)
 
         if mode == 'train':
@@ -131,7 +132,10 @@ class MonodepthDataloader(object):
     def read_lidar(self, image_path):
         #image = imread_tf(image_path)
         image = tf.image.decode_jpeg(tf.read_file(image_path))
-        image = tf.image.resize_images(image,  [self.params.height, self.params.width], tf.image.ResizeMethod.AREA)
-        image = tf.divide(image, tf.cast(tf.shape(image)[1],tf.float32))
+        #image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
+        #image = tf.image.resize_images(image,  [self.params.height, self.params.width], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        # image = tf.image.resize_images(image,  [375, 1242], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        image = tf.image.resize_images(image,  [215, 1137], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        image = tf.cast(image, tf.float32)
 
         return image

@@ -53,6 +53,7 @@ parser.add_argument('--checkpoint_path',           type=str,   help='path to a s
 parser.add_argument('--retrain',                               help='if used with checkpoint_path, will restart training from step zero', action='store_true')
 parser.add_argument('--full_summary',                          help='if set, will keep more data for each summary. Warning: the file can become very large', action='store_true')
 parser.add_argument('--use_lidar',                             help='if set, will train with lidar depth map', action='store_true')
+parser.add_argument('--gpus',                      type=str,   help='gpus to allocate memory', default='0')
 
 args = parser.parse_args()
 
@@ -139,7 +140,9 @@ def train(params):
         summary_op = tf.summary.merge_all('model_0')
 
         # SESSION
-        config = tf.ConfigProto(allow_soft_placement=True)
+        config = tf.ConfigProto(allow_soft_placement=True)  
+        config.gpu_options.allow_growth=True
+        config.gpu_options.visible_device_list=args.gpus
         sess = tf.Session(config=config)
 
         # SAVER
@@ -172,7 +175,7 @@ def train(params):
             before_op_time = time.time()
             _, loss_value = sess.run([apply_gradient_op, total_loss])
             duration = time.time() - before_op_time
-            if step and step % 100 == 0:
+            if step and step % 10 == 0:
                 examples_per_sec = params.batch_size / duration
                 time_sofar = (time.time() - start_time) / 3600
                 training_time_left = (num_total_steps / step - 1.0) * time_sofar
@@ -196,6 +199,8 @@ def test(params):
 
     # SESSION
     config = tf.ConfigProto(allow_soft_placement=True)
+    config.gpu_options.visible_device_list=args.gpus
+    config.gpu_options.allow_growth=True
     sess = tf.Session(config=config)
 
     # SAVER

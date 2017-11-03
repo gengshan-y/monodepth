@@ -16,7 +16,7 @@ def mkdir_p(path):
             pass
         else: raise
 
-test_files = read_text_lines( "%s/%s" % ('filenames','eigen_train_files.txt') )
+test_files = read_text_lines( "%s/%s" % ('filenames','eigen_val_files.txt') )
 gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0/KITTI/')
 
 
@@ -44,8 +44,10 @@ for t_id in range(len(gt_files)):
     mkdir_p(dir1)
     imname = im_files[t_id][sep2:]
     impath = '%s/%s' % (dir1,imname)
+    if os.path.exists(impath):
+        os.remove(impath)
+    impath = impath[:-4] + '.png'
 
-    # pdb.set_trace()
     # cv2.imwrite(impath, disp)
     gt_depth = gt_depth[crop[0]:crop[1],crop[2]:crop[3]]
     cv2.imwrite(impath, gt_depth)
@@ -53,8 +55,9 @@ for t_id in range(len(gt_files)):
     #im = img_as_uint(im)
     #io.imsave(impath, im)
     
+    #pdb.set_trace()
     #t = cv2.imread(impath, cv2.IMREAD_GRAYSCALE)
-    #print np.mean(abs(t[mask]-disp[mask]))
+    #print np.mean(abs(t-gt_depth))
 
     #imwrite_tf(disp, impath)
     #t = imread_tf_run(impath)

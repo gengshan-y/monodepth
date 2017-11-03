@@ -121,6 +121,21 @@ class MonodepthModel(object):
 
         return tf.clip_by_value((1 - SSIM) / 2, 0, 1)
 
+
+    def get_smoothness(self, d, img):
+        disp_gradients_x = tf.abs(self.gradient_x(d))
+        disp_gradients_y = tf.abs(self.gradient_y(d))
+
+        image_gradients_x = self.gradient_x(img)
+        image_gradients_y = self.gradient_y(img)
+
+        weights_x = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_x), 3, keep_dims=True))
+        weights_y = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_y), 3, keep_dims=True))
+
+        smoothness_x = disp_gradients_x * weights_x
+        smoothness_y = disp_gradients_y * weights_y
+        return [smoothness_x,  smoothness_y]
+
     def get_disparity_smoothness(self, disp, pyramid):
         disp_gradients_x = [self.gradient_x(d) for d in disp]
         disp_gradients_y = [self.gradient_y(d) for d in disp]
@@ -138,12 +153,14 @@ class MonodepthModel(object):
     def get_disp(self, x):
         # disp = 0.3 * self.conv(x, 2, 3, 1, tf.nn.sigmoid)
         disp = 0.3 * self.conv(x, 1, 3, 1, tf.nn.sigmoid)
+        #disp = self.conv(x, 1, 3, 1, tf.nn.elu)
         return disp
 
     def conv(self, x, num_out_layers, kernel_size, stride, activation_fn=tf.nn.elu):
         p = np.floor((kernel_size - 1) / 2).astype(np.int32)
         p_x = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]])
-        return slim.conv2d(p_x, num_out_layers, kernel_size, stride, 'VALID', activation_fn=activation_fn)
+        return slim.conv2d(p_x, num_out_layers, kernel_size, stride, 'VALID', activation_fn=activation_fn,normalizer_fn = slim.batch_norm)
+        #return slim.conv2d(p_x, num_out_layers, kernel_size, stride, 'VALID', activation_fn=activation_fn)
 
     def conv_block(self, x, num_out_layers, kernel_size):
         conv1 = self.conv(x,     num_out_layers, kernel_size, 1)
@@ -243,14 +260,17 @@ class MonodepthModel(object):
             upconv1 = upconv(iconv2,  16, 3, 2) #H
             concat1 = tf.concat([upconv1, udisp2], 3)
             iconv1  = conv(concat1,   16, 3, 1)
-            self.disp1 = self.get_disp(iconv1)  
+            self.disp1 = slim.conv2d(iconv1, 1, 1, 1, 'VALID',activation_fn=tf.nn.sigmoid)
+            # self.disp1 = self.conv(iconv1, 1, 3, 1, tf.nn.relu)
+
+            self.iconv1 = iconv1
             # self.disp1 = conv(iconv1, 1, 3, 1, tf.nn.relu)
             #self.resized_disp = tf.image.resize_images(self.disp1, [375, 1242])
             #self.resized_disp = tf.image.resize_images(0.3*self.conv(iconv1, 1, 3, 1, tf.nn.sigmoid), [375, 1242])
             #self.resized_disp = (tf.image.resize_images(self.disp1, [375, 1242])\
             # self.resized_disp = tf.image.resize_images(self.disp1, [375, 1242])
             self.resized_disp = tf.image.resize_images(self.disp1, [215, 1137])
-            self.resized_disp = tf.reciprocal(self.resized_disp)
+            # self.resized_disp = tf.reciprocal(self.resized_disp)
             #                + tf.image.resize_images(self.disp2, [375, 1242])\
             #                + tf.image.resize_images(self.disp3, [375, 1242])\
             #                + tf.image.resize_images(self.disp4, [375, 1242]))/4
@@ -311,6 +331,10 @@ class MonodepthModel(object):
             iconv1  = conv(concat1,   16, 3, 1)
             self.disp1 = self.get_disp(iconv1)
 
+            self.iconv1 = iconv1
+            self.resized_disp = tf.image.resize_images(self.disp1, [215, 1137])
+            #self.resized_disp = self.disp1
+
     def build_model(self):
         with slim.arg_scope([slim.conv2d, slim.conv2d_transpose], activation_fn=tf.nn.elu):
             with tf.variable_scope('model', reuse=self.reuse_variables):
@@ -325,6 +349,7 @@ class MonodepthModel(object):
                     self.model_input = tf.concat([self.left, self.right], 3)
                 else:
                     self.model_input = self.left
+                self.resized_im = tf.image.resize_images(self.left,[215,1137])
 
                 #build model
                 if self.params.encoder == 'vgg':
@@ -358,12 +383,17 @@ class MonodepthModel(object):
         with tf.variable_scope('smoothness'):
             self.disp_left_smoothness  = self.get_disparity_smoothness(self.disp_left_est,  self.left_pyramid)
             # self.disp_right_smoothness = self.get_disparity_smoothness(self.disp_right_est, self.right_pyramid)
+            self.depth_smoothness = self.get_smoothness(self.resized_disp, self.resized_im)
 
         # SUPERVISED
         if self.params.use_lidar:
             with tf.variable_scope('supervised'):
                 # upsampling 
                 self.mask2 = self.lidar[0] > 0
+                self.lidar[0] = self.lidar[0] / 1000
+                self.mask = tf.cast(self.mask2, tf.int32)
+                self.est_pure = tf.dynamic_partition(self.resized_disp, self.mask,2)[1]
+                self.gt_pure = tf.dynamic_partition(self.lidar[0], self.mask,2)[1]
                 self.est_masked2 = tf.where(self.mask2, self.resized_disp, tf.zeros_like(self.lidar[0]))
                 self.gt_masked2 = tf.where(self.mask2, self.lidar[0], tf.zeros_like(self.lidar[0]))
 
@@ -373,7 +403,7 @@ class MonodepthModel(object):
                 #self.gt_masked = [tf.where(self.mask[i],tf.log(self.lidar[i]),tf.zeros_like(self.lidar[i])) for i in range(4)]
                 
                 # linear
-                self.mask = [self.lidar[i]>0 for i in range(4)]
+                #self.mask = [self.lidar[i]>0 for i in range(4)]
                 #self.est_masked = [tf.where(self.mask[i],self.disp_left_est[i],tf.zeros_like(self.lidar[i])) for i in range(4)]
                 #self.gt_masked = [tf.where(self.mask[i],self.lidar[i],tf.zeros_like(self.lidar[i])) for i in range(4)]
 
@@ -412,6 +442,7 @@ class MonodepthModel(object):
             self.disp_left_loss  = [tf.reduce_mean(tf.abs(self.disp_left_smoothness[i]))  / 2 ** i for i in range(4)]
             # self.disp_right_loss = [tf.reduce_mean(tf.abs(self.disp_right_smoothness[i])) / 2 ** i for i in range(4)]
             self.disp_gradient_loss = tf.add_n(self.disp_left_loss) # + self.disp_right_loss)
+            self.d_gradient_loss = tf.add_n([tf.reduce_mean(x) for x in self.depth_smoothness])
 
             # LR CONSISTENCY
             # self.lr_left_loss  = [tf.reduce_mean(tf.abs(self.right_to_left_disp[i] - self.disp_left_est[i]))  for i in range(4)]
@@ -425,13 +456,16 @@ class MonodepthModel(object):
 
             # Supervised
             if self.params.use_lidar:
-                self.sup_loss = tf.abs(self.est_masked2 - self.gt_masked2)
-                self.sup_loss = tf.reduce_mean(self.sup_loss)
+                #self.err_dist = tf.abs(self.gt_pure - self.est_pure)
+                #self.err_image = tf.abs(self.est_masked2 - self.gt_masked2)
+                self.err_dist = 0.5 * tf.square(self.gt_pure - self.est_pure)
+                self.err_image = 0.5 * tf.square(self.est_masked2 - self.gt_masked2)
+                self.sup_loss = tf.reduce_mean(self.err_dist)
                 # self.sup_loss = [0.5 * tf.square(self.est_masked[i] - self.gt_masked[i]) for i in range(4)]
                 #self.sup_loss = [tf.abs(self.est_masked[i] - self.gt_masked[i]) for i in range(4)]
                 #self.sup_loss = [tf.reduce_mean(x) for x in self.sup_loss]
                 #self.sup_loss = tf.add_n(self.sup_loss)
-                self.total_loss = self.sup_loss # + self.params.disp_gradient_loss_weight * self.disp_gradient_loss
+                self.total_loss = self.sup_loss #+ self.params.disp_gradient_loss_weight * self.d_gradient_loss
 
     def build_summaries(self):
         # SUMMARIES
@@ -462,16 +496,24 @@ class MonodepthModel(object):
                 # tf.summary.scalar('pixel_num', tf.reduce_sum(tf.cast(self.mask[0], tf.float32)),collections=self.model_collection) 
                 tf.summary.scalar('pixel_num', tf.reduce_sum(tf.cast(self.mask2, tf.float32)),collections=self.model_collection)
                 # for debug
-                for i in range(4):
+                # for i in range(4):
                     #tf.summary.histogram('hist_pred', self.est_masked[i], collections=self.model_collection)
-                    tf.summary.histogram('hist_pred_full', self.disp_left_est[i], collections=self.model_collection)
+                    #tf.summary.histogram('hist_pred_full', self.disp_left_est[i], collections=self.model_collection)
                     #tf.summary.histogram('hist_gt', self.gt_masked[i], collections=self.model_collection)
                 #tf.summary.image('hist_gt_masked', self.gt_masked[0], max_outputs=4, collections=self.model_collection)
-                tf.summary.histogram('hist_pred', self.est_masked2, collections=self.model_collection)
-                tf.summary.histogram('gt_pred', self.gt_masked2, collections=self.model_collection)
-                tf.summary.histogram('pred', self.resized_disp, collections=self.model_collection)
+                tf.summary.histogram('self.est_masked2', self.est_masked2, collections=self.model_collection)
+                tf.summary.histogram('self.est_pure', self.est_pure, collections=self.model_collection)
+                tf.summary.histogram('self.gt_pure', self.gt_pure, collections=self.model_collection)
+                tf.summary.histogram('self.iconv1', self.iconv1, collections=self.model_collection)
+                tf.summary.histogram('self.disp1', self.disp1, collections=self.model_collection)
+                tf.summary.histogram('self.gt_masked2', self.gt_masked2, collections=self.model_collection)
+                tf.summary.histogram('self.resized_disp', self.resized_disp, collections=self.model_collection)
+                tf.summary.histogram('self.err_dist', self.err_dist, collections=self.model_collection)
+                
                 tf.summary.image('hist_gt_masked', self.gt_masked2, max_outputs=4, collections=self.model_collection)
+                tf.summary.image('err_image', self.err_image , max_outputs=4, collections=self.model_collection)
                 tf.summary.image('hist_est_masked', self.est_masked2, max_outputs=4, collections=self.model_collection)
+                tf.summary.image('self.iconv1', self.iconv1[:,:,:,:1], max_outputs=4, collections=self.model_collection)
                 tf.summary.image('est', self.resized_disp, max_outputs=4, collections=self.model_collection)
 
             if self.params.full_summary:

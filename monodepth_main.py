@@ -30,14 +30,14 @@ parser = argparse.ArgumentParser(description='Monodepth TensorFlow implementatio
 
 parser.add_argument('--mode',                      type=str,   help='train or test', default='train')
 parser.add_argument('--model_name',                type=str,   help='model name', default='monodepth')
-parser.add_argument('--encoder',                   type=str,   help='type of encoder, vgg or resnet50', default='vgg')
+parser.add_argument('--encoder',                   type=str,   help='type of encoder, vgg or resnet50', default='resnet50')
 parser.add_argument('--dataset',                   type=str,   help='dataset to train on, kitti, or cityscapes', default='kitti')
 parser.add_argument('--data_path',                 type=str,   help='path to the data', required=True)
 parser.add_argument('--filenames_file',            type=str,   help='path to the filenames text file', required=True)
 parser.add_argument('--input_height',              type=int,   help='input height', default=256)
 parser.add_argument('--input_width',               type=int,   help='input width', default=512)
 parser.add_argument('--batch_size',                type=int,   help='batch size', default=8)
-parser.add_argument('--num_epochs',                type=int,   help='number of epochs', default=50)
+parser.add_argument('--num_epochs',                type=int,   help='number of epochs', default=20)
 parser.add_argument('--learning_rate',             type=float, help='initial learning rate', default=1e-4)
 parser.add_argument('--lr_loss_weight',            type=float, help='left-right consistency weight', default=1.0)
 parser.add_argument('--alpha_image_loss',          type=float, help='weight between SSIM and L1 in the image loss', default=0.85)
@@ -82,6 +82,8 @@ def train(params):
 
         # OPTIMIZER
         num_training_samples = count_text_lines(args.filenames_file)
+        #valnames_file = args.filenames_file[:-15] + 'val' + args.filenames_file[:-10]
+        #num_val_samples = count_text_lines(valnames_file)
 
         steps_per_epoch = np.ceil(num_training_samples / params.batch_size).astype(np.int32)
         num_total_steps = params.num_epochs * steps_per_epoch
@@ -92,21 +94,27 @@ def train(params):
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
 
         opt_step = tf.train.AdamOptimizer(learning_rate)
+        #opt_step = tf.train.GradientDescentOptimizer(learning_rate)
 
         print("total number of samples: {}".format(num_training_samples))
         print("total number of steps: {}".format(num_total_steps))
 
-        dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode)
+        dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode)    
         left  = dataloader.left_image_batch
         right = dataloader.right_image_batch
-        if params.use_lidar:
-            lidar = dataloader.left_lidar_batch
 
         # split for each gpu
         left_splits  = tf.split(left,  args.num_gpus, 0)
         right_splits = tf.split(right, args.num_gpus, 0)
-        if params.use_lidar:
-            lidar_splits = tf.split(lidar, args.num_gpus, 0)
+
+        if args.mode == "train": 
+            #dataloader_val = MonodepthDataloader(args.data_path, args.valnames_file, params, args.dataset, args.mode
+            if params.use_lidar:
+                lidar = dataloader.left_lidar_batch
+                #val_lidar  = dataloader_val.left_lidar_batch
+
+                lidar_splits = tf.split(lidar, args.num_gpus, 0)
+                #val_lidar_splits = tf.split(val_lidar, args.num_gpus, 0)
 
         tower_grads  = []
         tower_losses = []
@@ -183,7 +191,7 @@ def train(params):
                 print(print_string.format(step, examples_per_sec, loss_value, time_sofar, training_time_left))
                 summary_str = sess.run(summary_op)
                 summary_writer.add_summary(summary_str, global_step=step)
-            if step and step % 10000 == 0:
+            if step and step % 1000 == 0:
                 train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=step)
 
         train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=num_total_steps)

@@ -242,8 +242,10 @@ def test(params):
     for step in range(num_test_samples):
         # disp = sess.run(model.disp_left_est[0])
         disp = sess.run(model.resized_disp)
-        disparities[step] = disp[0][:,:,0].squeeze()
-        disparities_pp[step] = post_process_disparity(disp[:,:,:,0].squeeze())
+        #disparities[step] = disp[0][:,:,0].squeeze()
+        #disparities_pp[step] = post_process_disparity(disp[:,:,:,0].squeeze())
+        disparities[step] = disp[0].squeeze()
+        disparities_pp[step] = post_process_disparity(disp.squeeze())
 
     print('done.')
 

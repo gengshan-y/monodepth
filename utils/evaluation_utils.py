@@ -74,7 +74,7 @@ def read_text_lines(file_path):
     lines = [l.rstrip() for l in lines]
     return lines
 
-def read_file_data(files, data_root):
+def read_file_data(files, data_root, is_left = True):
     gt_files = []
     gt_calib = []
     im_sizes = []
@@ -82,7 +82,10 @@ def read_file_data(files, data_root):
     cams = []
     num_probs = 0
     for filename in files:
-        filename = filename.split()[0]
+        if is_left:
+            filename = filename.split()[0]  # left image
+        else:
+            filename = filename.split()[1]
         splits = filename.split('/')
         camera_id = np.int32(splits[2][-1:])   # 2 is left, 3 is right
         date = splits[0]
@@ -97,7 +100,10 @@ def read_file_data(files, data_root):
             gt_calib.append(data_root + date + '/')
             im_sizes.append(cv2.imread(data_root + im).shape[:2])
             im_files.append(data_root + im)
-            cams.append(2)
+            if is_left:
+                cams.append(2)
+            else:
+                cams.append(3)
         else:
             num_probs += 1
             print('{} missing'.format(data_root + im))

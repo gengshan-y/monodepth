@@ -2,6 +2,7 @@ import numpy as np
 import cv, cv2
 import argparse
 from evaluation_utils import *
+import pdb
 
 parser = argparse.ArgumentParser(description='Evaluation on the KITTI dataset')
 parser.add_argument('--split',               type=str,   help='data split, kitti or eigen',         required=True)
@@ -11,6 +12,7 @@ parser.add_argument('--min_depth',           type=float, help='minimum depth for
 parser.add_argument('--max_depth',           type=float, help='maximum depth for evaluation',        default=80)
 parser.add_argument('--eigen_crop',                      help='if set, crops according to Eigen NIPS14',   action='store_true')
 parser.add_argument('--garg_crop',                       help='if set, crops according to Garg  ECCV16',   action='store_true')
+parser.add_argument('--depth',                       help='if set, crops according to Garg  ECCV16',   action='store_true')
 
 args = parser.parse_args()
 
@@ -36,13 +38,16 @@ if __name__ == '__main__':
             camera_id = cams[t_id]  # 2 is left, 3 is right
             depth = generate_depth_map(gt_calib[t_id], gt_files[t_id], im_sizes[t_id], camera_id, False, True)
             gt_depths.append(depth.astype(np.float32))
-
             disp_pred = cv2.resize(pred_disparities[t_id], (im_sizes[t_id][1], im_sizes[t_id][0]), interpolation=cv2.INTER_LINEAR)
-            disp_pred = disp_pred * disp_pred.shape[1]
+            # disp_pred = pred_disparities[t_id]
 
             # need to convert from disparity to depth
             focal_length, baseline = get_focal_length_baseline(gt_calib[t_id], camera_id)
-            depth_pred = (baseline * focal_length) / disp_pred
+            if args.depth:
+                depth_pred = disp_pred * 1000.
+            else:
+                disp_pred = disp_pred * disp_pred.shape[1]
+                depth_pred = (baseline * focal_length) / disp_pred
             depth_pred[np.isinf(depth_pred)] = 0
 
             pred_depths.append(depth_pred)
@@ -95,6 +100,10 @@ if __name__ == '__main__':
             d1_all[i] = 100.0 * bad_pixels.sum() / mask.sum()
 
         abs_rel[i], sq_rel[i], rms[i], log_rms[i], a1[i], a2[i], a3[i] = compute_errors(gt_depth[mask], pred_depth[mask])
+        #gt_depth = gt_depth[crop[0]:crop[1],crop[2]:crop[3]]
+        #gt_depth = cv2.resize(gt_depth, (1137,215), interpolation=cv2.INTER_NEAREST)
+        #mask = gt_depth > 0
+        #abs_rel[i], sq_rel[i], rms[i], log_rms[i], a1[i], a2[i], a3[i] = compute_errors(gt_depth[mask], pred_depth[mask])
 
     print("{:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}".format('abs_rel', 'sq_rel', 'rms', 'log_rms', 'd1_all', 'a1', 'a2', 'a3'))
     print("{:10.4f}, {:10.4f}, {:10.3f}, {:10.3f}, {:10.3f}, {:10.3f}, {:10.3f}, {:10.3f}".format(abs_rel.mean(), sq_rel.mean(), rms.mean(), log_rms.mean(), d1_all.mean(), a1.mean(), a2.mean(), a3.mean()))

@@ -16,8 +16,8 @@ def mkdir_p(path):
             pass
         else: raise
 
-test_files = read_text_lines( "%s/%s" % ('filenames','eigen_val_files.txt') )
-gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0/KITTI/')
+test_files = read_text_lines( "%s/%s" % ('filenames','eigen_train_files.txt'))
+gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0/KITTI/' , is_left = False)
 
 
 for t_id in range(len(gt_files)):
@@ -28,10 +28,10 @@ for t_id in range(len(gt_files)):
                                      0.0359477 * gt_width,   0.96405229 * gt_width]).astype(np.int32)
     crop_mask = np.zeros(mask.shape)
     crop_mask[crop[0]:crop[1],crop[2]:crop[3]] = 1
-    mask = np.logical_and(mask, crop_mask)
+    # mask = np.logical_and(mask, crop_mask)
     gt_depth[~mask] = -1
 
-    disp = np.zeros(gt_depth.shape)
+    disp = -1 * np.ones(gt_depth.shape)
     focal_length, baseline = get_focal_length_baseline(gt_calib[t_id], cams[t_id])
     disp[mask] = (baseline * focal_length) / gt_depth[mask]
     # disp /= gt_width
@@ -40,7 +40,7 @@ for t_id in range(len(gt_files)):
     sep2 = im_files[t_id].find('.jpg') -11
 
     str1 = gt_files[t_id][:sep1]
-    dir1 = '%s/%s' % (str1, 'depth_0')
+    dir1 = '%s/%s' % (str1, 'disp_1')
     mkdir_p(dir1)
     imname = im_files[t_id][sep2:]
     impath = '%s/%s' % (dir1,imname)
@@ -48,9 +48,9 @@ for t_id in range(len(gt_files)):
         os.remove(impath)
     impath = impath[:-4] + '.png'
 
-    # cv2.imwrite(impath, disp)
-    gt_depth = gt_depth[crop[0]:crop[1],crop[2]:crop[3]]
-    cv2.imwrite(impath, gt_depth)
+    cv2.imwrite(impath, disp)
+    # gt_depth = gt_depth[crop[0]:crop[1],crop[2]:crop[3]]
+    # cv2.imwrite(impath, gt_depth)
     #im = exposure.rescale_intensity(disp, out_range='float')
     #im = img_as_uint(im)
     #io.imsave(impath, im)

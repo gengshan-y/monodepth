@@ -45,12 +45,14 @@ parser.add_argument('--disp_gradient_loss_weight', type=float, help='disparity s
 parser.add_argument('--do_stereo',                             help='if set, will train the stereo model', action='store_true')
 parser.add_argument('--wrap_mode',                 type=str,   help='bilinear sampler wrap mode, edge or border', default='border')
 parser.add_argument('--use_deconv',                            help='if set, will use transposed convolutions', action='store_true')
+parser.add_argument('--use_upproj',                            help='if set, will use up projections', action='store_true')
 parser.add_argument('--num_gpus',                  type=int,   help='number of GPUs to use for training', default=1)
 parser.add_argument('--num_threads',               type=int,   help='number of threads to use for data loading', default=8)
 parser.add_argument('--output_directory',          type=str,   help='output directory for test disparities, if empty outputs to checkpoint folder', default='')
 parser.add_argument('--log_directory',             type=str,   help='directory to save checkpoints and summaries', default='')
 parser.add_argument('--checkpoint_path',           type=str,   help='path to a specific checkpoint to load', default='')
 parser.add_argument('--retrain',                               help='if used with checkpoint_path, will restart training from step zero', action='store_true')
+parser.add_argument('--from_disp',                               help='fine tune from disp', action='store_true')
 parser.add_argument('--full_summary',                          help='if set, will keep more data for each summary. Warning: the file can become very large', action='store_true')
 parser.add_argument('--use_lidar',                             help='if set, will train with lidar depth map', action='store_true')
 parser.add_argument('--gpus',                      type=str,   help='gpus to allocate memory', default='0')
@@ -110,10 +112,12 @@ def train(params):
         if args.mode == "train": 
             #dataloader_val = MonodepthDataloader(args.data_path, args.valnames_file, params, args.dataset, args.mode
             if params.use_lidar:
-                lidar = dataloader.left_lidar_batch
+                left_lidar = dataloader.left_lidar_batch
+                right_lidar = dataloader.right_lidar_batch
                 #val_lidar  = dataloader_val.left_lidar_batch
 
-                lidar_splits = tf.split(lidar, args.num_gpus, 0)
+                left_lidar_splits = tf.split(left_lidar, args.num_gpus, 0)
+                right_lidar_splits = tf.split(right_lidar, args.num_gpus, 0)
                 #val_lidar_splits = tf.split(val_lidar, args.num_gpus, 0)
 
         tower_grads  = []
@@ -124,7 +128,7 @@ def train(params):
                 with tf.device('/gpu:%d' % i):
                     if params.use_lidar:
                         model = MonodepthModel(params, args.mode, left_splits[i],\
-                                     right_splits[i], lidar_splits[i], reuse_variables, i)
+                                     right_splits[i], left_lidar_splits[i], right_lidar_splits[i], reuse_variables, i)
                     else:
                         model = MonodepthModel(params, args.mode, left_splits[i], right_splits[i], reuse_variables, i)
 
@@ -155,7 +159,7 @@ def train(params):
 
         # SAVER
         summary_writer = tf.summary.FileWriter(args.log_directory + '/' + args.model_name, sess.graph)
-        train_saver = tf.train.Saver()
+        train_saver = tf.train.Saver(max_to_keep=1)
 
         # COUNT PARAMS
         total_num_parameters = 0
@@ -180,18 +184,19 @@ def train(params):
         start_step = global_step.eval(session=sess)
         start_time = time.time()
         for step in range(start_step, num_total_steps):
+            # train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=step)
             before_op_time = time.time()
-            _, loss_value = sess.run([apply_gradient_op, total_loss])
+            _, loss_value = sess.run([apply_gradient_op, total_loss], feed_dict = {model.step:step})
             duration = time.time() - before_op_time
-            if step and step % 10 == 0:
+            if step and step % 100 == 0:
                 examples_per_sec = params.batch_size / duration
                 time_sofar = (time.time() - start_time) / 3600
                 training_time_left = (num_total_steps / step - 1.0) * time_sofar
                 print_string = 'batch {:>6} | examples/s: {:4.2f} | loss: {:.5f} | time elapsed: {:.2f}h | time left: {:.2f}h'
                 print(print_string.format(step, examples_per_sec, loss_value, time_sofar, training_time_left))
-                summary_str = sess.run(summary_op)
+                summary_str = sess.run(summary_op, feed_dict = {model.step:step})
                 summary_writer.add_summary(summary_str, global_step=step)
-            if step and step % 1000 == 0:
+            if step and step % 10000 == 0:
                 train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=step)
 
         train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=num_total_steps)
@@ -230,12 +235,15 @@ def test(params):
     num_test_samples = count_text_lines(args.filenames_file)
 
     print('now testing {} files'.format(num_test_samples))
-    disparities    = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
-    disparities_pp = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
+    disparities    = np.zeros((num_test_samples, 375, 1242), dtype=np.float32)
+    disparities_pp = np.zeros((num_test_samples, 375, 1242), dtype=np.float32)
+    #disparities    = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
+    #disparities_pp = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     for step in range(num_test_samples):
-        disp = sess.run(model.disp_left_est[0])
-        disparities[step] = disp[0].squeeze()
-        disparities_pp[step] = post_process_disparity(disp.squeeze())
+        # disp = sess.run(model.disp_left_est[0])
+        disp = sess.run(model.resized_disp)
+        disparities[step] = disp[0][:,:,0].squeeze()
+        disparities_pp[step] = post_process_disparity(disp[:,:,:,0].squeeze())
 
     print('done.')
 
@@ -262,9 +270,11 @@ def main(_):
         use_lidar=args.use_lidar,
         wrap_mode=args.wrap_mode,
         use_deconv=args.use_deconv,
+        use_upproj=args.use_upproj,
         alpha_image_loss=args.alpha_image_loss,
         disp_gradient_loss_weight=args.disp_gradient_loss_weight,
         lr_loss_weight=args.lr_loss_weight,
+        from_disp=args.from_disp,
         full_summary=args.full_summary)
 
 

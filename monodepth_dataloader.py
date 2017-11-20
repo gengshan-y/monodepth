@@ -53,16 +53,25 @@ class MonodepthDataloader(object):
             left_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
                       tmp.values[1], tmp.values[2], tmp.values[3]]\
                    #  + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
-                    + [tf.convert_to_tensor('depth_0')] + [imnum + '.png'], '/')
-            left_lidar_o = self.read_lidar(left_lidar_path)
+                   # + [tf.convert_to_tensor('depth_0')] + [imnum + '.png'], '/')
+                   + [tf.convert_to_tensor('disp_0')] + [imnum + '.png'], '/')
+                    #+ [tf.convert_to_tensor('d_0')] + [imnum + '.png'], '/')
+            left_lidar = self.read_lidar(left_lidar_path)
+            left_lidar.set_shape( [None, None, 1])
+            right_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
+                      tmp.values[1], tmp.values[2], tmp.values[3]]\
+                   + [tf.convert_to_tensor('disp_1')] + [imnum + '.png'], '/')
+            right_lidar = self.read_lidar(right_lidar_path)
+            right_lidar.set_shape( [None, None, 1])
 
         if mode == 'train':
             # randomly flip images
-            #do_flip = tf.random_uniform([], 0, 1)
-            do_flip = tf.random_uniform([], 0, 0.1)
+            do_flip = tf.random_uniform([], 0, 1)
+            # do_flip = tf.random_uniform([], 0, 0.1)
             left_image  = tf.cond(do_flip > 0.5, lambda: tf.image.flip_left_right(right_image_o), lambda: left_image_o)
             right_image = tf.cond(do_flip > 0.5, lambda: tf.image.flip_left_right(left_image_o),  lambda: right_image_o)
-            left_lidar = left_lidar_o
+            left_lidar = tf.cond(do_flip > 0.5, lambda: tf.image.flip_left_right(right_lidar), lambda: left_lidar)
+            right_lidar = tf.cond(do_flip > 0.5, lambda: tf.image.flip_left_right(left_lidar), lambda: right_lidar)
 
             # randomly augment images
             do_augment  = tf.random_uniform([], 0, 1)
@@ -70,13 +79,17 @@ class MonodepthDataloader(object):
 
             left_image.set_shape( [None, None, 3])
             right_image.set_shape([None, None, 3])
-            left_lidar.set_shape( [None, None, 1])
 
             # capacity = min_after_dequeue + (num_threads + a small safety margin) * batch_size
             min_after_dequeue = 2048
             capacity = min_after_dequeue + 4 * params.batch_size
-            self.left_image_batch, self.right_image_batch, self.left_lidar_batch =\
-                tf.train.shuffle_batch([left_image, right_image, left_lidar],
+            if self.params.use_lidar:
+                self.left_image_batch, self.right_image_batch, self.left_lidar_batch, self.right_lidar_batch =\
+                tf.train.shuffle_batch([left_image, right_image, left_lidar, right_lidar],
+                params.batch_size, capacity, min_after_dequeue, params.num_threads)
+            else:
+                self.left_image_batch, self.right_image_batch =\
+                tf.train.shuffle_batch([left_image, right_image],
                 params.batch_size, capacity, min_after_dequeue, params.num_threads)
 
         elif mode == 'test':
@@ -133,11 +146,13 @@ class MonodepthDataloader(object):
     def read_lidar(self, image_path):
         #image = imread_tf(image_path)
         image = tf.image.decode_png(tf.read_file(image_path))
-        #image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
         #image = tf.image.resize_images(image,  [self.params.height, self.params.width], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        # image = tf.image.resize_images(image,  [375, 1242], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        image = tf.image.resize_images(image,  [215, 1137], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        image = tf.image.resize_images(image,  [375, 1242], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        # image = tf.image.resize_images(image,  [215, 1137], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         #image = tf.image.resize_images(image,  [256, 512], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        image = tf.cast(image, tf.float32)
+
+        #image = tf.cast(image, tf.float32)
+        #image = image / 1000.
+        image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
 
         return image

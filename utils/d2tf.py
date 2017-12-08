@@ -1,11 +1,19 @@
+import argparse
 from evaluation_utils import read_text_lines, read_file_data, generate_depth_map, get_focal_length_baseline
 import cv2
 # from matplotlib import pyplot as plt
 import numpy as np
 import os, os.path
 import pdb
-#from skimage import io, exposure, img_as_uint, img_as_float
-#from tfrecord_utils import imwrite_tf, imread_tf_run
+
+
+
+parser = argparse.ArgumentParser(description='lidar label pre-processing.')
+parser.add_argument('--name', type=str,   help='name of the image folder', default='disp_10_1')
+parser.add_argument('--is_train',         help='if set, generate train lidar depth map', action='store_true')
+parser.add_argument('--is_left',          help='if set, generate left lidar depth map', action='store_true')
+args = parser.parse_args()
+
 
 # Taken from https://stackoverflow.com/a/600612/119527
 def mkdir_p(path):
@@ -16,8 +24,15 @@ def mkdir_p(path):
             pass
         else: raise
 
-test_files = read_text_lines( "%s/%s" % ('filenames','eigen_train_files.txt'))
-gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0/KITTI/' , is_left = False)
+if args.is_train:
+    test_files = read_text_lines( "%s/%s" % ('filenames','eigen_train_files.txt'))
+else:
+    test_files = read_text_lines( "%s/%s" % ('filenames','eigen_val_files.txt'))
+gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0/KITTI/' , is_left = args.is_left)
+
+
+# discretize
+bins = np.linspace(0.,5.,num=100)
 
 
 for t_id in range(len(gt_files)):
@@ -40,7 +55,7 @@ for t_id in range(len(gt_files)):
     sep2 = im_files[t_id].find('.jpg') -11
 
     str1 = gt_files[t_id][:sep1]
-    dir1 = '%s/%s' % (str1, 'disp_1')
+    dir1 = '%s/%s' % (str1, args.name)
     mkdir_p(dir1)
     imname = im_files[t_id][sep2:]
     impath = '%s/%s' % (dir1,imname)
@@ -48,6 +63,9 @@ for t_id in range(len(gt_files)):
         os.remove(impath)
     impath = impath[:-4] + '.png'
 
+
+    disp[mask] = np.log(disp[mask])
+    disp = np.digitize(disp,bins)
     cv2.imwrite(impath, disp)
     # gt_depth = gt_depth[crop[0]:crop[1],crop[2]:crop[3]]
     # cv2.imwrite(impath, gt_depth)

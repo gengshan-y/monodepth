@@ -188,7 +188,7 @@ def train(params):
             before_op_time = time.time()
             _, loss_value = sess.run([apply_gradient_op, total_loss], feed_dict = {model.step:step})
             duration = time.time() - before_op_time
-            if step and step % 100 == 0:
+            if step and step % 10 == 0:
                 examples_per_sec = params.batch_size / duration
                 time_sofar = (time.time() - start_time) / 3600
                 training_time_left = (num_total_steps / step - 1.0) * time_sofar
@@ -240,12 +240,16 @@ def test(params):
     #disparities    = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     #disparities_pp = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     for step in range(num_test_samples):
-        # disp = sess.run(model.disp_left_est[0])
-        disp = sess.run(model.resized_disp)
+        #disp = sess.run(model.disp_left_est[0])
+        disp = sess.run(model.disc_pred_l)
+        #disp = sess.run(model.resized_disp)
         #disparities[step] = disp[0][:,:,0].squeeze()
         #disparities_pp[step] = post_process_disparity(disp[:,:,:,0].squeeze())
-        disparities[step] = disp[0].squeeze()
-        disparities_pp[step] = post_process_disparity(disp.squeeze())
+        #disparities[step] = disp[0].squeeze()
+        #disparities_pp[step] = post_process_disparity(disp.squeeze())
+        # demo
+        np.save(os.path.dirname(args.checkpoint_path) + '/disparities-tmp.npy',    disp)
+        break
 
     print('done.')
 
@@ -255,7 +259,7 @@ def test(params):
     else:
         output_directory = args.output_directory
     np.save(output_directory + '/disparities.npy',    disparities)
-    np.save(output_directory + '/disparities_pp.npy', disparities_pp)
+    #np.save(output_directory + '/disparities_pp.npy', disparities_pp)
 
     print('done.')
 

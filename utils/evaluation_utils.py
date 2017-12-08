@@ -221,6 +221,7 @@ def generate_depth_map(calib_dir, velo_file_name, im_shape, cam=2, interp=False,
 
     if interp:
         # interpolate the depth map to fill in holes
+        from scipy.interpolate import LinearNDInterpolator
         depth_interp = lin_interp(im_shape, velo_pts_im)
         return depth, depth_interp
     else:

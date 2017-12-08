@@ -52,14 +52,16 @@ class MonodepthDataloader(object):
             imnum = tf.string_split([tmp.values[-1]],tf.convert_to_tensor('.')).values[0]
             left_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
                       tmp.values[1], tmp.values[2], tmp.values[3]]\
-                   #  + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
+                   # + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
                    # + [tf.convert_to_tensor('depth_0')] + [imnum + '.png'], '/')
+                   # + [tf.convert_to_tensor('disp_100_0')] + [imnum + '.png'], '/')
                    + [tf.convert_to_tensor('disp_0')] + [imnum + '.png'], '/')
                     #+ [tf.convert_to_tensor('d_0')] + [imnum + '.png'], '/')
             left_lidar = self.read_lidar(left_lidar_path)
             left_lidar.set_shape( [None, None, 1])
             right_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
                       tmp.values[1], tmp.values[2], tmp.values[3]]\
+                   # + [tf.convert_to_tensor('disp_100_1')] + [imnum + '.png'], '/')
                    + [tf.convert_to_tensor('disp_1')] + [imnum + '.png'], '/')
             right_lidar = self.read_lidar(right_lidar_path)
             right_lidar.set_shape( [None, None, 1])

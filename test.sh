@@ -1,1 +1,1 @@
-python monodepth_main.py --mode test --data_path /data/gengshay/KITTI/ --filenames_file ~/code/monodepth/utils/filenames/eigen_test_files.txt --log_directory /scratch/gengshay/tmp/ --checkpoint_path /scratch/gengshay/tmp/disc-soft/model-110000 --use_upproj --gpus 2
+python monodepth_main.py --mode test --data_path /data/gengshay/KITTI/ --filenames_file ~/code/monodepth/utils/filenames/eigen_test_files.txt --log_directory /scratch/gengshay/tmp/ --checkpoint_path /scratch/gengshay/tmp/sup-baseline/model-169500 --use_upproj --gpus 0

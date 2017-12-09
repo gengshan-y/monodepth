@@ -46,7 +46,6 @@ parser.add_argument('--do_stereo',                             help='if set, wil
 parser.add_argument('--wrap_mode',                 type=str,   help='bilinear sampler wrap mode, edge or border', default='border')
 parser.add_argument('--use_deconv',                            help='if set, will use transposed convolutions', action='store_true')
 parser.add_argument('--use_upproj',                            help='if set, will use up projections', action='store_true')
-parser.add_argument('--num_gpus',                  type=int,   help='number of GPUs to use for training', default=1)
 parser.add_argument('--num_threads',               type=int,   help='number of threads to use for data loading', default=8)
 parser.add_argument('--output_directory',          type=str,   help='output directory for test disparities, if empty outputs to checkpoint folder', default='')
 parser.add_argument('--log_directory',             type=str,   help='directory to save checkpoints and summaries', default='')
@@ -56,6 +55,7 @@ parser.add_argument('--from_disp',                               help='fine tune
 parser.add_argument('--full_summary',                          help='if set, will keep more data for each summary. Warning: the file can become very large', action='store_true')
 parser.add_argument('--use_lidar',                             help='if set, will train with lidar depth map', action='store_true')
 parser.add_argument('--gpus',                      type=str,   help='gpus to allocate memory', default='0')
+parser.add_argument('--lidar_name',                      type=str,   help='gpus to allocate memory', default='disp_10')
 
 args = parser.parse_args()
 
@@ -96,35 +96,34 @@ def train(params):
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
 
         opt_step = tf.train.AdamOptimizer(learning_rate)
-        #opt_step = tf.train.GradientDescentOptimizer(learning_rate)
 
         print("total number of samples: {}".format(num_training_samples))
         print("total number of steps: {}".format(num_total_steps))
 
-        dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode)    
+        dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode, args.lidar_name)
         left  = dataloader.left_image_batch
         right = dataloader.right_image_batch
 
+
+        num_gpus = len(args.gpus.split(','))
+        print ('using %d gpus'%num_gpus)
         # split for each gpu
-        left_splits  = tf.split(left,  args.num_gpus, 0)
-        right_splits = tf.split(right, args.num_gpus, 0)
+        left_splits  = tf.split(left,  num_gpus, 0)
+        right_splits = tf.split(right, num_gpus, 0)
 
         if args.mode == "train": 
-            #dataloader_val = MonodepthDataloader(args.data_path, args.valnames_file, params, args.dataset, args.mode
             if params.use_lidar:
                 left_lidar = dataloader.left_lidar_batch
                 right_lidar = dataloader.right_lidar_batch
-                #val_lidar  = dataloader_val.left_lidar_batch
 
-                left_lidar_splits = tf.split(left_lidar, args.num_gpus, 0)
-                right_lidar_splits = tf.split(right_lidar, args.num_gpus, 0)
-                #val_lidar_splits = tf.split(val_lidar, args.num_gpus, 0)
+                left_lidar_splits = tf.split(left_lidar, num_gpus, 0)
+                right_lidar_splits = tf.split(right_lidar, num_gpus, 0)
 
         tower_grads  = []
         tower_losses = []
         reuse_variables = None
         with tf.variable_scope(tf.get_variable_scope()):
-            for i in range(args.num_gpus):
+            for i in range(num_gpus):
                 with tf.device('/gpu:%d' % i):
                     if params.use_lidar:
                         model = MonodepthModel(params, args.mode, left_splits[i],\
@@ -153,7 +152,8 @@ def train(params):
 
         # SESSION
         config = tf.ConfigProto(allow_soft_placement=True)  
-        config.gpu_options.allow_growth=True
+        # config.gpu_options.allow_growth=True
+        config.gpu_options.allow_growth=False
         config.gpu_options.visible_device_list=args.gpus
         sess = tf.Session(config=config)
 
@@ -186,7 +186,8 @@ def train(params):
         for step in range(start_step, num_total_steps):
             # train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=step)
             before_op_time = time.time()
-            _, loss_value = sess.run([apply_gradient_op, total_loss], feed_dict = {model.step:step})
+            # _, loss_value = sess.run([apply_gradient_op, total_loss], feed_dict = {model.step:step})
+            _, loss_value = sess.run([apply_gradient_op, total_loss])
             duration = time.time() - before_op_time
             if step and step % 10 == 0:
                 examples_per_sec = params.batch_size / duration
@@ -194,7 +195,8 @@ def train(params):
                 training_time_left = (num_total_steps / step - 1.0) * time_sofar
                 print_string = 'batch {:>6} | examples/s: {:4.2f} | loss: {:.5f} | time elapsed: {:.2f}h | time left: {:.2f}h'
                 print(print_string.format(step, examples_per_sec, loss_value, time_sofar, training_time_left))
-                summary_str = sess.run(summary_op, feed_dict = {model.step:step})
+                # summary_str = sess.run(summary_op, feed_dict = {model.step:step})
+                summary_str = sess.run(summary_op)
                 summary_writer.add_summary(summary_str, global_step=step)
             if step and step % 10000 == 0:
                 train_saver.save(sess, args.log_directory + '/' + args.model_name + '/model', global_step=step)
@@ -204,7 +206,7 @@ def train(params):
 def test(params):
     """Test function."""
 
-    dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode)
+    dataloader = MonodepthDataloader(args.data_path, args.filenames_file, params, args.dataset, args.mode, args.lidar_name)
     left  = dataloader.left_image_batch
     right = dataloader.right_image_batch
 
@@ -241,15 +243,16 @@ def test(params):
     #disparities_pp = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     for step in range(num_test_samples):
         #disp = sess.run(model.disp_left_est[0])
-        disp = sess.run(model.disc_pred_l)
-        #disp = sess.run(model.resized_disp)
+        disp = sess.run(model.resized_disp)
         #disparities[step] = disp[0][:,:,0].squeeze()
         #disparities_pp[step] = post_process_disparity(disp[:,:,:,0].squeeze())
-        #disparities[step] = disp[0].squeeze()
+        disparities[step] = disp[0].squeeze()
         #disparities_pp[step] = post_process_disparity(disp.squeeze())
+
         # demo
-        np.save(os.path.dirname(args.checkpoint_path) + '/disparities-tmp.npy',    disp)
-        break
+        # disp = sess.run(model.disc_pred_l)
+        # np.save(os.path.dirname(args.checkpoint_path) + '/disparities-tmp.npy',    disp)
+        # break
 
     print('done.')
 
@@ -274,6 +277,7 @@ def main(_):
         num_epochs=args.num_epochs,
         do_stereo=args.do_stereo,
         use_lidar=args.use_lidar,
+        lidar_name=args.lidar_name,
         wrap_mode=args.wrap_mode,
         use_deconv=args.use_deconv,
         use_upproj=args.use_upproj,

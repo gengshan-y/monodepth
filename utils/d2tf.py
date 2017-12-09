@@ -32,7 +32,7 @@ gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0
 
 
 # discretize
-bins = np.linspace(0.,5.,num=100)
+bins = np.linspace(0.,5.,num=10)
 
 
 for t_id in range(len(gt_files)):

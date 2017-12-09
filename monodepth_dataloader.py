@@ -21,7 +21,7 @@ def string_length_tf(t):
 class MonodepthDataloader(object):
     """monodepth dataloader"""
 
-    def __init__(self, data_path, filenames_file, params, dataset, mode):
+    def __init__(self, data_path, filenames_file, params, dataset, mode, lidar_name):
         self.data_path = data_path
         self.params = params
         self.dataset = dataset
@@ -42,8 +42,8 @@ class MonodepthDataloader(object):
             left_image_o  = self.read_image(left_image_path)
         else:
             left_image_path  = tf.string_join([self.data_path, split_line[0]])
-            right_image_path = tf.string_join([self.data_path, split_line[1]])
             left_image_o  = self.read_image(left_image_path)
+            right_image_path = tf.string_join([self.data_path, split_line[1]])
             right_image_o = self.read_image(right_image_path)
 
         # load lidar data if needed
@@ -55,14 +55,14 @@ class MonodepthDataloader(object):
                    # + [tf.convert_to_tensor('disp_0')] + [tmp.values[-1]], '/')
                    # + [tf.convert_to_tensor('depth_0')] + [imnum + '.png'], '/')
                    # + [tf.convert_to_tensor('disp_100_0')] + [imnum + '.png'], '/')
-                   + [tf.convert_to_tensor('disp_0')] + [imnum + '.png'], '/')
+                   + [tf.convert_to_tensor('%s_0'%lidar_name)] + [imnum + '.png'], '/')
                     #+ [tf.convert_to_tensor('d_0')] + [imnum + '.png'], '/')
             left_lidar = self.read_lidar(left_lidar_path)
             left_lidar.set_shape( [None, None, 1])
             right_lidar_path = tf.string_join( ['/']+[tmp.values[0],\
                       tmp.values[1], tmp.values[2], tmp.values[3]]\
                    # + [tf.convert_to_tensor('disp_100_1')] + [imnum + '.png'], '/')
-                   + [tf.convert_to_tensor('disp_1')] + [imnum + '.png'], '/')
+                   + [tf.convert_to_tensor('%s_1'%lidar_name)] + [imnum + '.png'], '/')
             right_lidar = self.read_lidar(right_lidar_path)
             right_lidar.set_shape( [None, None, 1])
 
@@ -84,7 +84,7 @@ class MonodepthDataloader(object):
 
             # capacity = min_after_dequeue + (num_threads + a small safety margin) * batch_size
             min_after_dequeue = 2048
-            capacity = min_after_dequeue + 4 * params.batch_size
+            capacity = min_after_dequeue + 100 * params.batch_size
             if self.params.use_lidar:
                 self.left_image_batch, self.right_image_batch, self.left_lidar_batch, self.right_lidar_batch =\
                 tf.train.shuffle_batch([left_image, right_image, left_lidar, right_lidar],
@@ -145,16 +145,9 @@ class MonodepthDataloader(object):
 
         return image
     
-    def read_lidar(self, image_path):
-        #image = imread_tf(image_path)
-        image = tf.image.decode_png(tf.read_file(image_path))
-        #image = tf.image.resize_images(image,  [self.params.height, self.params.width], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        image = tf.image.resize_images(image,  [375, 1242], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        # image = tf.image.resize_images(image,  [215, 1137], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        #image = tf.image.resize_images(image,  [256, 512], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+    def read_lidar(self, path):
+        data = tf.image.decode_png(tf.read_file(path))
+        data = tf.image.resize_images(data,  [375, 1242], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        # image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
 
-        #image = tf.cast(image, tf.float32)
-        #image = image / 1000.
-        image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
-
-        return image
+        return data

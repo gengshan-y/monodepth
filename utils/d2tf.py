@@ -32,8 +32,12 @@ gt_files, gt_calib, im_sizes, im_files, cams = read_file_data(test_files, '/ssd0
 
 
 # discretize
-bins = np.linspace(0.,5.,num=10)
-
+# bins = np.linspace(0.,5.,num=50)  # log bins
+# bins = np.linspace(1e-3,80.,num=100)  # log bins
+nbins=100
+max_depth = 80
+min_depth = 1e-3
+bins = np.logspace(np.log(min_depth),np.log(max_depth),num=nbins,base=np.e)
 
 for t_id in range(len(gt_files)):
     gt_depth = generate_depth_map(gt_calib[t_id], gt_files[t_id], im_sizes[t_id], cams[t_id], False, True)
@@ -64,9 +68,12 @@ for t_id in range(len(gt_files)):
     impath = impath[:-4] + '.png'
 
 
-    disp[mask] = np.log(disp[mask])
-    disp = np.digitize(disp,bins)
-    cv2.imwrite(impath, disp)
+    # disp[mask] = np.log(disp[mask])  # log bins
+    # disp = np.digitize(disp,bins)
+    # cv2.imwrite(impath, disp)
+
+    gt_depth = np.digitize(gt_depth,bins)
+    cv2.imwrite(impath, gt_depth)
     # gt_depth = gt_depth[crop[0]:crop[1],crop[2]:crop[3]]
     # cv2.imwrite(impath, gt_depth)
     #im = exposure.rescale_intensity(disp, out_range='float')

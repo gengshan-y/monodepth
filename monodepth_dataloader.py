@@ -147,7 +147,9 @@ class MonodepthDataloader(object):
     
     def read_lidar(self, path):
         data = tf.image.decode_png(tf.read_file(path))
-        data = tf.image.resize_images(data,  [375, 1242], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        # image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
+        if len(self.params.lidar_name.split('_')) > 1:
+            data = tf.image.resize_images(data,  [self.params.height, self.params.width], tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        else:
+            image = tf.divide(tf.cast(image, tf.float32), tf.cast(tf.shape(image)[1],tf.float32))  # relative disp
 
         return data

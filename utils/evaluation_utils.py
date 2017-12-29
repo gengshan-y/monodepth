@@ -5,6 +5,13 @@ import cv, cv2
 from collections import Counter
 import pickle
 
+def show_error(data,r,t,figsize=(20,5)):
+    from matplotlib import pyplot as plt
+    fig = plt.figure(figsize = figsize)
+    plt.hist(np.concatenate(data).ravel(),bins=1000,range=r,histtype='step');
+    plt.axvline(x=np.mean(np.concatenate(data).ravel()), color='r');
+    plt.title(t);
+
 def compute_errors(gt, pred):
     thresh = np.maximum((gt / pred), (pred / gt))
     a1 = (thresh < 1.25   ).mean()

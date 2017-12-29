@@ -45,7 +45,7 @@ class MonodepthModel(object):
     """monodepth model"""
 
     def __init__(self, params, mode, left, right, left_lidar=None, right_lidar=None, reuse_variables=None, model_index=0):
-        if len(params.lidar_name.split('_')) == 2:
+        if len(params.lidar_name.split('_')) > 1:
             self.n_class = int(params.lidar_name.split('_')[-1])
         else:
             self.n_class = 0
@@ -276,14 +276,16 @@ class MonodepthModel(object):
             upconv1 = upconv(iconv2,  16, 3, 2) #H
             concat1 = tf.concat([upconv1, udisp2], 3)
             iconv1  = conv(concat1,   16, 3, 1)
-            self.disp1 = self.get_disp(iconv1)
 
             if self.n_class:
-                self.disp_disc = self.conv(self.disp1, self.n_class, 3, 1, None)
-                self.resized_disp = tf.image.resize_images(self.disp_disc, [375, 1242])
+                self.resized_disp = 0.3 * self.conv(iconv1, self.n_class, 3, 1, None)
+                # self.resized_disp = tf.image.resize_images(self.resized_disp, [self.params.height, self.params.width])
             # regression
             else:
-                self.resized_disp = tf.image.resize_images(self.disp1[:,:,:,:1], [375, 1242])
+                self.disp1 = self.get_disp(iconv1)
+                self.resized_disp = self.disp1[:,:,:,:1]
+                # self.resized_disp = tf.image.resize_images(self.disp1[:,:,:,:1], [375, 1242])
+                # self.resized_disp = self.disp1[:,:,:,:1]
 
     def build_model(self):
         with slim.arg_scope([slim.conv2d, slim.conv2d_transpose], activation_fn=tf.nn.elu):
@@ -294,14 +296,14 @@ class MonodepthModel(object):
                 #    self.lidar = self.scale_pyramid_lidar(self.lidar,  4);
                 if self.mode == 'train':
                     self.right_pyramid = self.scale_pyramid(self.right, 4)
-                    self.resized_im_r = tf.image.resize_images(self.right,[375,1242])
+                    # self.resized_im_r = tf.image.resize_images(self.right,[375,1242])
 
                 if self.params.do_stereo:
                     self.model_input = tf.concat([self.left, self.right], 3)
                 else:
                     self.model_input = self.left
                 # self.resized_im = tf.image.resize_images(self.left,[215,1137])
-                self.resized_im_l = tf.image.resize_images(self.left,[375,1242])
+                # self.resized_im_l = tf.image.resize_images(self.left,[375,1242])
                 
 
                 #build model
@@ -422,8 +424,8 @@ class MonodepthModel(object):
                     self.mask = tf.cast(self.lidar >= 0, tf.int32)
                     self.gt_pure = tf.dynamic_partition(self.lidar, self.mask,2)[1]   
 
-                    lab_l = tf.one_hot(self.lidar[:,:,:,0],self.n_class)
-                    #lab_l = 0.5 * tf.one_hot(self.lidar[:,:,:,0],100) + 0.25 * tf.one_hot(self.lidar[:,:,:,0]-1,100) + 0.25 * tf.one_hot(self.lidar[:,:,:,0]+1,100)
+                    # lab_l = tf.one_hot(self.lidar[:,:,:,0],self.n_class)
+                    lab_l = 0.5 * tf.one_hot(self.lidar[:,:,:,0],100) + 0.25 * tf.one_hot(self.lidar[:,:,:,0]-1,100) + 0.25 * tf.one_hot(self.lidar[:,:,:,0]+1,100)
                     self.err_dist = tf.nn.softmax_cross_entropy_with_logits(\
                          logits=self.resized_disp[:,:,:,0:self.n_class],labels = lab_l)
                     self.err_dist = tf.dynamic_partition(self.err_dist, self.mask[:,:,:,0],2)[1]

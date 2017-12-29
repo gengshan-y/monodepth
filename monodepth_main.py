@@ -35,7 +35,7 @@ parser.add_argument('--dataset',                   type=str,   help='dataset to 
 parser.add_argument('--data_path',                 type=str,   help='path to the data', required=True)
 parser.add_argument('--filenames_file',            type=str,   help='path to the filenames text file', required=True)
 parser.add_argument('--input_height',              type=int,   help='input height', default=256)
-parser.add_argument('--input_width',               type=int,   help='input width', default=512)
+parser.add_argument('--input_width',               type=int,   help='input width', default=768)
 parser.add_argument('--batch_size',                type=int,   help='batch size', default=8)
 parser.add_argument('--num_epochs',                type=int,   help='number of epochs', default=20)
 parser.add_argument('--learning_rate',             type=float, help='initial learning rate', default=1e-4)
@@ -78,7 +78,8 @@ def count_text_lines(file_path):
 def train(params):
     """Training loop."""
 
-    with tf.Graph().as_default(), tf.device('/cpu:0'):
+    # with tf.Graph().as_default(), tf.device('/cpu:0'):
+    with tf.Graph().as_default():  # dont use cpu domain, other cpu burst 
 
         global_step = tf.Variable(0, trainable=False)
 
@@ -152,14 +153,13 @@ def train(params):
 
         # SESSION
         config = tf.ConfigProto(allow_soft_placement=True)  
-        # config.gpu_options.allow_growth=True
-        config.gpu_options.allow_growth=False
+        config.gpu_options.allow_growth=True
         config.gpu_options.visible_device_list=args.gpus
         sess = tf.Session(config=config)
 
         # SAVER
         summary_writer = tf.summary.FileWriter(args.log_directory + '/' + args.model_name, sess.graph)
-        train_saver = tf.train.Saver(max_to_keep=1)
+        train_saver = tf.train.Saver(max_to_keep=10)
 
         # COUNT PARAMS
         total_num_parameters = 0
@@ -237,18 +237,23 @@ def test(params):
     num_test_samples = count_text_lines(args.filenames_file)
 
     print('now testing {} files'.format(num_test_samples))
-    disparities    = np.zeros((num_test_samples, 375, 1242), dtype=np.float32)
-    disparities_pp = np.zeros((num_test_samples, 375, 1242), dtype=np.float32)
+    disparities    = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
+    disparities_pp = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     #disparities    = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     #disparities_pp = np.zeros((num_test_samples, params.height, params.width), dtype=np.float32)
     for step in range(num_test_samples):
         #disp = sess.run(model.disp_left_est[0])
-        disp = sess.run(model.resized_disp)
         #disparities[step] = disp[0][:,:,0].squeeze()
         #disparities_pp[step] = post_process_disparity(disp[:,:,:,0].squeeze())
-        disparities[step] = disp[0].squeeze()
         #disparities_pp[step] = post_process_disparity(disp.squeeze())
 
+        # regression
+        if len(params.lidar_name.split('_')) > 1:
+            disparities[step] = sess.run(model.disc_pred_l)[0].squeeze()
+        else:
+            disp = sess.run(model.resized_disp)
+            disparities[step] = disp[0].squeeze()
+        
         # demo
         # disp = sess.run(model.disc_pred_l)
         # np.save(os.path.dirname(args.checkpoint_path) + '/disparities-tmp.npy',    disp)
